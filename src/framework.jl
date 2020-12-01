@@ -1,42 +1,39 @@
 """
-    mapgrowth(models; series::AbstractGeoSeries, tspan::AbstractRange, arraytype=Array) => GeoArray
+    mapgrowth(model; series::AbstractGeoSeries, tspan::AbstractRange)
+    mapgrowth(layers...; kwargs...)
 
-Combine growth rates and stressors for all layers,
-in all files in each `series` falling in each period of `tspan`.
+Combine growth rates accross layers and subperiods for all required periods.
 
 ## Arguments
-- `models`: a `ModelWrapper`, a `Tuple` or splat of `Layer` components,
-  or a NamedTuple holding multiple `Tuple`/`ModelWrapper` models.
+
+- `model`: A `Model`, NamedTuple of `Model`,  or `Tuple` of `Layer` components. 
+
+`Layer`s can also be passed in as separate arguments. A `NamedTuple` of models
+will all be run from the same data source, reducing load time.
 
 ## Keyword Arguments
+
 - `series`: any AbstractGeoSeries from [GeoData.jl](http://github.com/rafaqz/GeoData.jl)
 - `tspan`: `AbstractRange` for the timespan to run the layers for.
-  This will be the index oof the output `Ti` dimension.
-- `arraytype`: An array constructor to apply to data once it's loaded from disk.
-  The main use case for this is a `GPUArray` such as `CuArray` which will result in all
-  computations happening on the GPU, if you have one.
+  This will become the `index` values of the output `GeoArray` time-dimension `Ti`.
 
-Using multiple models in a `NamedTuple` can be an order of magnitude faster than
-running models separately -- especially when `arraytype=CuArray` or similar.
-In this configuration, all data required by all layers in all models will be loaded
-from disk only once and copied to the GPU only once. This is useful for doing all kinds 
-of sensitivity analysis and model comparison. 
-
-##  Returns 
-
-A `GeoArray` or `NamedTuple` of `GeoArray`, with the same dimensions as the passed-in 
-stack layers, and an additional `Ti` (time) dimension matching `tspan`.
+The output is a GeoArray with the same dimensions as the passed in stack layers, and a Time
+dimension with a length of `nperiods`.
 """
-mapgrowth(wrapper::ModelWrapper; kwargs...) = mapgrowth(wrapper.model; kwargs...)
-mapgrowth(layers...; kwargs...) = mapgrowth(layers; kwargs...)
-mapgrowth(layers::Tuple; kwargs...) = mapgrowth((_default_=layers,); kwargs...)[:_default_]
-mapgrowth(models::NamedTuple; series::AbstractGeoSeries, tspan::AbstractRange, arraytype=Array) = begin
+mapgrowth(layers::Layer...; kw...) = mapgrowth(layers; kw...)
+mapgrowth(layers::Tuple{<:Layer,Vararg}; kw...) = mapgrowth(Model(layers); kw...)
+mapgrowth(model::Model; kw...) = mapgrowth((model,); kw...)[1]
+mapgrowth(m1::Model, ms::Model...; kw...) = mapgrowth((m1, ms...); kw...)
+function mapgrowth(models::Union{Tuple{<:Model,Vararg},NamedTuple{<:Any,Tuple{<:Model,Vararg}}}; 
+    series::AbstractGeoSeries, tspan::AbstractRange, arraytype=Array
+)
+    models = map(stripparams ∘ parent, models)
     period = step(tspan); nperiods = length(tspan)
     startdate, enddate = first(tspan), last(tspan)
-    required_keys = Tuple(union(map(l -> tuple(union(keys(l))), models)...)[1])
+    required_keys = Tuple(union(map(keys ∘ _astuple, models)...))
 
     # Copy only the required keys to a memory-backed stack
-    stack = GeoStack(deepcopy(first(series)); keys=required_keys)
+    stack = deepcopy(GeoStack(first(series); keys=required_keys))
 
     A = first(values(stack));
     missingval = eltype(A)(NaN)
@@ -50,7 +47,7 @@ mapgrowth(models::NamedTuple; series::AbstractGeoSeries, tspan::AbstractRange, a
     outdims = (dims(A)..., ti)
     outA = arraytype(zeros(eltype(A), size(A)..., nperiods))
     outputs = map(models) do m
-        GeoArray(deepcopy(outA), outdims; name="growthrate", missingval=missingval)
+        GeoArray(deepcopy(outA), outdims; name=:growthrate, missingval=missingval)
     end
 
     runperiods!(outputs, stackbuffer, series, mask, models, tspan)
@@ -59,7 +56,7 @@ mapgrowth(models::NamedTuple; series::AbstractGeoSeries, tspan::AbstractRange, a
     map(o -> GeoData.modify(Array, o), outputs)
 end
 
-function runperiods!(outputs::NamedTuple, stackbuffer, series, mask, models::NamedTuple, tspan)
+function runperiods!(outputs, stackbuffer, series, mask, models, tspan)
     period = step(tspan); nperiods = length(tspan)
     println("Running for $(1:nperiods)")
     for p in 1:nperiods
@@ -73,11 +70,10 @@ function runperiods!(outputs::NamedTuple, stackbuffer, series, mask, models::Nam
         # So we just work with time as Points using `Where`.
         subseries = series[Ti(Where(t -> t >= periodstart && t < periodend))]
         for t in 1:size(subseries, Ti)
-            println("\n    ", val(dims(subseries, Ti))[t])
+            println("    ", val(dims(subseries, Ti))[t])
             # Copy the arrays we need from disk to the buffer stack
             copy!(stackbuffer, subseries[t])
             map(outputs, models, keys(outputs)) do output, model, key
-                length(models) > 1 && println("        For $key")
                 # For some reason now this is broken with DD getindex, view is a workaround
                 parent(view(output, Ti(p))) .+= combinelayers(model, stackbuffer)
             end
@@ -111,9 +107,11 @@ end
 # Can never use °C, so we convert it.
 maybetoK(val) = unit(val) == u"°C" ? val |> K : val
 
-@inline conditionalrate(l::Layer, val) =
-    conditionalrate(model(l), maybetoK(unit(l) * val))
+@inline conditionalrate(l::Layer, val) = conditionalrate(model(l), maybetoK(unit(l) * val))
 @inline conditionalrate(l::Layer, val::Unitful.AbstractQuantity) =
     conditionalrate(model(l), maybetoK(val))
 @inline conditionalrate(model::RateModel, val) =
     condition(model, val) ? rate(model, val) : zero(rate(model, val))
+
+_astuple(x::Tuple) = x
+_astuple(x) = (x,)

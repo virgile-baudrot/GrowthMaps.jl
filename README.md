@@ -2,7 +2,7 @@
 
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://cesaraustralia.github.io/GrowthMaps.jl/stable/)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://cesaraustralia.github.io/GrowthMaps.jl/dev/)
-[![Build Status](https://travis-ci.org/cesaraustralia/GrowthMaps.jl.svg?branch=master)](https://travis-ci.org/cesaraustralia/GrowthMaps.jl)
+[![Build Status](https://travis-ci.com/cesaraustralia/GrowthMaps.jl.svg?branch=master)](https://travis-ci.com/cesaraustralia/GrowthMaps.jl)
 [![codecov.io](http://codecov.io/github/cesaraustralia/GrowthMaps.jl/coverage.svg?branch=master)](http://codecov.io/github/cesaraustralia/GrowthMaps.jl?branch=master)
 
 ![example](https://raw.githubusercontent.com/cesaraustralia/GrowthMaps.jl/gh-pages/dev/figures/example_26_1.png)
@@ -13,9 +13,9 @@ al, _"Forecasting the potential distribution of the invasive vegetable leafminer
 using ‘top-down’ and ‘bottom-up’ models"_
 [(in press)](https://www.biorxiv.org/content/10.1101/866996v1).
 
-GrowthMaps.jl is a replacement for CLIMEX and similar tools. Different from CLIMEX is that 
-results arrays have units of growth/time. Another useful property of these models is that growth 
-rate layers can be added and combined arbitrarily.
+GrowthMaps.jl is an alternative to CLIMEX and similar tools. Its key point of differentiation from
+other methods is that results arrays have units of growth/time. Another useful property of these models 
+is that growth rate layers can be added and combined arbitrarily.
 
 A primary use-case for GrowthMaps layers is in for calculating growth-rates for
 ![Dispersal.jl](https://github.com/cesaraustralia/Dispersal.jl). This allows heterogeneous
